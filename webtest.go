@@ -666,7 +666,7 @@ func parseScript(file, text string) (*script, error) {
 		// Opcode, with optional leading "not"
 		chk.op, args = splitOneField(args)
 		switch chk.op {
-		case "==", "!=", "~", "!~", "contains", "!contains":
+		case "==", "!=", "~", "!~", "contains", "!contains", "json", "!json":
 			// ok
 		default:
 			return nil, errorf("unknown check operator %q", chk.op)
