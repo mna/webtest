@@ -15,6 +15,7 @@ This fork of https://github.com/cespare/webtest expands on the original `webtest
 * Support for `PUT`, `PATCH` and `DELETE` HTTP methods (in addition to `GET`, `HEAD` and `POST`)
 * Support for the `reqcookie` verb to set a cookie on the request
 * Support for the `cookie` and `rawcookie` verbs to assert a cookie's value on the HTTP response
+* Support for the `json` and `!json` operators to compare values as JSON, ignoring insignificant changes such as whitespace
 * Support for end-to-end testing, serving the handler with an HTTP server and executing requests with a client
 * Better test coverage
 
