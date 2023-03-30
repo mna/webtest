@@ -136,9 +136,11 @@
 //	== - the value must be equal to the text
 //	!= - the value must not be equal to the text
 //	~  - the value must match the text interprted as a regular expression
-//	!~ - the value must not match the text interprted as a regular expression
+//	!~ - the value must not match the text interpreted as a regular expression
 //	contains  - the value must contain the text as a substring
 //	!contains - the value must not contain the text as a substring
+//	json - the value must be an equivalent JSON value (ignoring non-significant whitespace)
+//	!json - the value must not be an equivalent JSON value
 //
 // For example:
 //
@@ -172,6 +174,7 @@ package webtest
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -331,13 +334,14 @@ type case_ struct {
 
 // A cmp is a single comparison (check) made against a test case.
 type cmpCheck struct {
-	file    string
-	line    int
-	what    string
-	whatArg string
-	op      string
-	want    string
-	wantRE  *regexp.Regexp
+	file     string
+	line     int
+	what     string
+	whatArg  string
+	op       string
+	want     string
+	wantRE   *regexp.Regexp
+	wantJSON string // after unmarshal+re-marshal, so it is standardized
 }
 
 // runHandler runs a test case against the handler h.
@@ -480,6 +484,26 @@ func (c *case_) check(resp *http.Response, body string) error {
 		case "!contains":
 			if strings.Contains(value, chk.want) {
 				fmt.Fprintf(&msg, "%s:%d: %s contains %#q (but should not)\n\t%s\n", chk.file, chk.line, what, chk.want, indent(value))
+			}
+		case "json", "!json":
+			var v any
+			if err := json.Unmarshal([]byte(value), &v); err != nil {
+				fmt.Fprintf(&msg, "%s:%d: invalid JSON value: %s\n\t%s\n", chk.file, chk.line, err, value)
+			}
+			b, err := json.Marshal(v)
+			if err != nil {
+				fmt.Fprintf(&msg, "%s:%d: invalid JSON value: %s\n\t%s\n", chk.file, chk.line, err, value)
+			}
+			gotJSON := string(b)
+
+			if chk.op == "json" {
+				if gotJSON != chk.wantJSON {
+					fmt.Fprintf(&msg, "%s:%d: %s json:\n\t%s\ndoes not match (but should):\n\t%s\n", chk.file, chk.line, what, value, chk.wantJSON)
+				}
+			} else {
+				if gotJSON == chk.wantJSON {
+					fmt.Fprintf(&msg, "%s:%d: %s json:\n\t%s\nmatches (but should not):\n\t%s\n", chk.file, chk.line, what, value, chk.wantJSON)
+				}
 			}
 		}
 	}
@@ -696,6 +720,20 @@ func parseScript(file, text string) (*script, error) {
 					return nil, errorf("invalid regexp: %s", err)
 				}
 				chk.wantRE = re
+			} else if chk.op == "json" || chk.op == "!json" {
+				var v any
+				if err := json.Unmarshal([]byte(chk.want), &v); err != nil {
+					lineno = chk.line
+					line = chk.want
+					return nil, errorf("invalid json: %s", err)
+				}
+				b, err := json.Marshal(v)
+				if err != nil {
+					lineno = chk.line
+					line = chk.want
+					return nil, errorf("invalid json: %s", err)
+				}
+				chk.wantJSON = string(b)
 			}
 		}
 		if !sawCode {
