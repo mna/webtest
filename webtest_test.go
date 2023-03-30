@@ -45,6 +45,13 @@ func TestEchoHandler(t *testing.T) {
 	TestHandler(t, "testdata/echo.txt", http.HandlerFunc(echo))
 }
 
+func TestEchoHandlerE2E(t *testing.T) {
+	fsys := os.DirFS("testdata")
+	if err := CheckHandlerE2E(fsys, "echo.txt", http.HandlerFunc(echo), nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func testWebtest(t *testing.T, glob string, do func(*case_) error) {
 	files, err := filepath.Glob(glob)
 	if err != nil {

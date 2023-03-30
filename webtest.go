@@ -17,6 +17,11 @@
 // It runs the entire script and returns a multiline error summarizing
 // any problems.
 //
+// The function CheckHandlerE2E is the same as CheckHandler except that it
+// serves the handler with an HTTP server and makes a real HTTP request using
+// the provided client, allowing assertions on responses obtained in an
+// end-to-end fashion.
+//
 // # Scripts
 //
 // A script is a text file containing a sequence of cases, separated by blank lines.
@@ -208,6 +213,25 @@ func CheckHandler(fsys fs.FS, glob string, h http.Handler) error {
 	return check(fsys, glob, func(c *case_) error { return c.runHandler(h) })
 }
 
+// Doer defines the Do method required to execute an HTTP request. The
+// net/http.Client type satisfies that interface.
+type Doer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
+// CheckHandlerE2E is like CheckHandler, but the handler is served by a test
+// server and the request is executed by an HTTP client. If client is nil,
+// http.DefaultClient is used.
+func CheckHandlerE2E(fsys fs.FS, glob string, h http.Handler, client Doer) error {
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return check(fsys, glob, func(c *case_) error { return c.runHandlerE2E(client, srv.URL) })
+}
+
 func check(fsys fs.FS, glob string, do func(*case_) error) error {
 	files, err := fs.Glob(fsys, glob)
 	if err != nil {
@@ -325,6 +349,40 @@ func (c *case_) runHandler(h http.Handler) error {
 	}
 	h.ServeHTTP(w, r)
 	return c.check(w.Result(), w.Body.String())
+}
+
+// runHandlerE2E runs a test case against the test server's base URL using
+// the provided HTTP client.
+func (c *case_) runHandlerE2E(client Doer, baseURL string) error {
+	baseu, err := url.Parse(baseURL)
+	if err != nil {
+		return err
+	}
+	// the case url may have a scheme and host, if so we have to replace it
+	// with the test server's.
+	caseu, err := url.Parse(c.url)
+	if err != nil {
+		return err
+	}
+	caseu.Host = baseu.Host
+	caseu.Scheme = baseu.Scheme
+
+	req, err := c.newRequest(caseu.String())
+	if err != nil {
+		return err
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	return c.check(resp, string(body))
 }
 
 // newRequest creates a new request for the case c,
